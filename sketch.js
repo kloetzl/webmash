@@ -113,8 +113,12 @@ function overlap (arr1, arr2) {
 }
 
 function revcomp(str) {
-  var map = {A:'T', C:'G', G:'C', T:'A'};
-  return str.split("").reverse().map(c => map[c]).join("");
+  // var map = {A:'T', C:'G', G:'C', T:'A'};
+  return str.split("").reverse().map(function (char){
+    var num = char.charCodeAt(0);
+    var comp = num ^= num & 2 ? 4 : 21;
+    return String.fromCharCode(comp);
+  }).join("");
 }
 
 function sketchSeq(str, onprogress) {
@@ -145,7 +149,7 @@ function sketchSeq(str, onprogress) {
 
   var heap = makeHeap();
 
-  var canonicalize = GLOBALS.alphabet != "ACGT" ? function () {
+  var canonicalize = GLOBALS.alphabet != "ACGT" ? function (i) {
     return kmer(str, i);
   } : function (i){
     var forward = kmer(str, i);

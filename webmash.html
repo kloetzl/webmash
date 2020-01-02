@@ -36,7 +36,7 @@ var GLOBALS = {
 
 function clear() {
   sketches = {'left': null, right: null};
-  $('.sketch').empty();
+  $('.sketch tbody').empty();
   $('#output').text('');
   var percent = '0%';
   $('.progress_bar').text(percent).width(percent);
