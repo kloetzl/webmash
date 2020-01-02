@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang=en>
+  <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap-theme.min.css" integrity="sha384-6pzBo3FDv/PJ8r2KRkGHifhEocL+1X2rVCTTkUfGk7/0pbek5mMa1upzvWbrUbOZ" crossorigin="anonymous">
+
+    <style>
+.sketch {
+  font-family: monospace;
+}
+
+.highlight {
+  color: red;
+}
+
+tbody {
+  text-align: right;
+}
+    </style>
+    <script src=https://code.jquery.com/jquery-3.4.1.min.js></script>
+    <script src=sketch.js></script>
+    <script src=hash.js></script>
+    <script>
+
+var sketches = {'left': null, right: null};
+
+var GLOBALS = {
+  K: 21,
+  alphabet: "ACGT",
+  sketchSize: 1000,
+  useWorker: true
+};
+
+function clear() {
+  sketches = {'left': null, right: null};
+  $('.sketch').empty();
+  $('#output').text('');
+  var percent = '0%';
+  $('.progress_bar').text(percent).width(percent);
+}
+
+function printSketch(sketch) {
+  var code = "";
+
+  for (var pair of sketch.pairs()) {
+    code += "<tr><td>"+ pair[0] + "</td><td>" + pair[1] + "</td></tr>";
+  }
+
+  return code;
+}
+
+function readAndBlock (file, onprogress, ondone) {
+  var reader = new FileReader();
+
+  reader.onerror = console.error;
+  reader.onprogress = function updateProgress(evt) {
+    // todo: send progress update
+    onprogress(0.5)
+  };
+
+  reader.onabort = function(e) {
+    // todo: huh?
+    onprogress(0)
+  };
+
+  reader.onloadstart = function(e) {
+    // todo: send progress update
+    onprogress(0.001)
+  };
+
+  reader.onload = function(e) {
+    // todo: send progress update
+    onprogress(1)
+    ondone(sketchFile(reader.result, onprogress));
+  };
+
+  // reader.readAsBinaryString(evt.target.files[0]);
+  reader.readAsText(file);
+
+  return reader.abort.bind(reader);
+}
+
+
+function readUsingWorker(file, onprogress, ondone) {
+  var w = new Worker('worker.js');
+  "You may have to change your browsers config to allow local web workers.";
+
+  w.onmessage = function (msg) {
+    var handlers = {
+      'log' : console.log,
+      'ping': console.info,
+      'err': console.error,
+      'progress': onprogress,
+      'sketch': function (payload) {
+        onprogress(1);
+        ondone(sketch(payload));
+      }
+    };
+
+    if (msg.data.type in handlers) {
+      handlers[msg.data.type](msg.data.payload);
+    } else {
+      console.error("unknown message type", msg)
+    }
+  };
+
+  w.onerror = console.error
+  w.onmessageerror = console.info;
+
+  w.postMessage({ type:'init', payload:{GLOBALS: GLOBALS} });
+  w.postMessage({ type:'read', payload:file});
+
+  function abort() {
+    w.terminate();
+    delete w;
+  }
+
+  return abort;
+}
+
+function handleFileSelect (event) {
+  var file = event.target.files[0];
+  var section = $(event.target).closest('.col-md-6');
+  var progress_bar = section.find('div.progress_bar');
+  section.find('h2').text(file.name);
+  section.find('.kill').addClass('btn-danger');
+
+  console.time("sketch");
+
+  function ondone (s) {
+    console.timeEnd("sketch");
+    // performance.measure("sketch-time", "sketch-start", "sketch-end");
+
+    var which = section.hasClass('left') ? 'left' : 'right';
+    sketches[which] = s;
+    section.find('.sketch tbody').empty().append(printSketch(s));
+    section.find('.alert').addClass('hidden');
+    section.find('.kill').removeClass('btn-danger');
+  }
+
+  function onprogress(amount) {
+    var percent = (amount * 100 |0) + '%';
+    progress_bar.text(percent).width(percent);
+  }
+
+  onprogress(0);
+
+  var readFn = GLOBALS.useWorker ? readUsingWorker : readAndBlock;
+  var abort = readFn(file, onprogress, ondone);
+
+  section.find('.kill').click(abort);
+}
+
+    </script>
+
+  </head>
+  <body>
+
+<div class=container>
+  <div class="page-header jumbotron">
+    <h1>WebMash</h1>
+    <p class="lead">Compute alignment-free distances between genomes, directly in your browser! Based on the popular <a href=https://github.com/marbl/mash>Mash</a> tool. Pick two sequences below and then hit compute.</p>
+    <p>This is work in progress. Beware of bugs. Visit <a href=https://github.com/kloetzl/webmash>github.com/kloetzl/webmash</a> to contribute.</p>
+  </div>
+  <div class=row>
+    <div class=col-md-6>
+      <h2>Distance</h2>
+      <button id=compute class="btn btn-primary btn-lg">Compute</button>
+      <div class=well>Distance: <span id=output></span></div>
+    </div>
+    <div class="col-md-6">
+      <h2>Settings</h2>
+      <form class=form-horizontal>
+        <div class=form-group>
+          <label class="col-sm-4 control-label" for=sketchSize>Sketch Size</label>
+          <div class=col-sm-3>
+            <input class="form-control" id=sketchSize type=number min= 100 max=10000 step=100 value=1000>
+          </div>
+        </div>
+        <div class=form-group>
+          <label class="col-sm-4 control-label" for=K>K</label>
+          <div class=col-sm-3>
+            <input class="form-control" id=K type=number min=5 mix=32  value=21>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-4 control-label" for=alphabet>Alphabet</label>
+          <div class=col-sm-3>
+            <input class=form-control id=alphabet type=string>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="col-sm-8 col-sm-offset-4">
+            <span class=help-block>If the alphabet is <tt>ACGT</tt> the reverse complement is used to compute the canonical form of a k-mer.</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-4 control-label" for=useWorker>Use Web Workers</label>
+          <div class=col-sm-3>
+            <input class=form-control type=checkbox id=useWorker>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="col-sm-8 col-sm-offset-4">
+            <span class=help-block>Web workers sketch sequences in the background without blocking the UI.</span>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-6 left">
+      <h2>Sequence A</h2>
+
+      <div class=row>
+        <div class=col-md-10>
+          <form>
+            <input type="file" name="file" />
+          </form>
+        </div>
+        <div class=col-md-2>
+          <button class="btn kill">Abort</button>
+        </div>
+      </div>
+      
+      <div class="progress">
+        <div class="progress-bar progress_bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+          <span class="sr-only">0% Complete</span>
+        </div>
+      </div>
+
+      <div class="alert alert-danger hidden" role="alert">Pick a sequence file.</div>
+
+      <table class="table sketch">
+        <thead><th>Hash</th><th>k-mer</th></thead>
+        <tbody><tr><td>…</td><td>…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="col-md-6 right">
+      <h2>Sequence B</h2>
+
+      <div class=row>
+        <div class=col-md-10>
+          <form>
+            <input type="file" name="file" />
+          </form>
+        </div>
+        <div class=col-md-2>
+          <button class="btn kill">Abort</button>
+        </div>
+      </div>
+      
+      <div class="progress">
+        <div class="progress-bar progress_bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+          <span class="sr-only">0% Complete</span>
+        </div>
+      </div>
+
+      <div class="alert alert-danger hidden" role="alert">Pick a sequence file.</div>
+
+      <table class="table sketch">
+        <thead><th>Hash</th><th>k-mer</th></thead>
+        <tbody><tr><td>…</td><td>…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+$('input[type="file"]').on('change', handleFileSelect);
+$('#sketchSize').val(GLOBALS.sketchSize).on('change', function () {
+  GLOBALS.sketchSize = ~~$(this).val();
+  clear();
+});
+$('#K').val(GLOBALS.K).on('change', function () {
+  GLOBALS.K = ~~$(this).val();
+  clear();
+});
+$('#alphabet').val(GLOBALS.alphabet).on('change', function (){
+  GLOBALS.alphabet = $(this).val();
+  clear();
+});
+$('#useWorker').prop("checked", GLOBALS.useWorker).on('change', function (){
+  GLOBALS.useWorker = !!$(this).prop("checked");
+});
+$('#compute').click(function () {
+  if (!sketches.left) {
+    // highlight
+    $('.left .alert').removeClass('hidden');
+    return;
+  }
+  if (!sketches.right) {
+    // highlight
+    $('.right .alert').removeClass('hidden');
+    return;
+  }
+
+  var d = sketches.left.distance(sketches.right);
+  $('#output').text(d);
+});
+
+</script>
+
+</body>
